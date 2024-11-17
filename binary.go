@@ -1,5 +1,10 @@
 package gulc
 
+import (
+	"reflect"
+	"unsafe"
+)
+
 // LowBits 返回最低位的1
 func LowBits(num int) int {
 	return num & (-num)
@@ -19,4 +24,21 @@ func ReverseBits(num int) int {
 // HighBits 返回数字的最高位
 func HighBits(num int) int {
 	return ReverseBits(LowBits(ReverseBits(num)))
+}
+
+// LE2Int64以小端的顺序创造data,转换为int64
+func LE2Int64(data []byte) uint64 {
+	addr := (*reflect.SliceHeader)(unsafe.Pointer(&data)).Data
+	int64Addr := (*uint64)(unsafe.Pointer(addr))
+	return *int64Addr
+}
+
+// Int2Byte以小端方式将num转换为[]byte
+func Int2Byte(num int) []byte {
+	sliceHeader := reflect.SliceHeader{
+		Data: uintptr(unsafe.Pointer(&num)),
+		Len:  4,
+		Cap:  4,
+	}
+	return *(*[]byte)(unsafe.Pointer(&sliceHeader))
 }

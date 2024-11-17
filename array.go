@@ -171,3 +171,13 @@ func CountInversePairs(nums []int) int {
 }
 
 
+func IndexOf[T comparable](arr []T, v T) int {
+	for i, item := range arr {
+		if item == v {
+			return i
+		}
+	}
+	return -1
+}
+
+
