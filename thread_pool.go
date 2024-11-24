@@ -4,6 +4,7 @@ package gulc
 import (
 	"sync"
 	"time"
+	"context"
 )
 
 
@@ -31,17 +32,16 @@ type Work struct {
 type Worker struct {
 	taskChannel chan Work
 	isCore      bool
-	quit        chan struct{}
 	keepAliveTime  time.Duration
 	wg *sync.WaitGroup
 }
 
-func NewWorker(taskChannle chan Work, isCore bool, quit chan struct{}, keepAliveTime time.Duration, wg *sync.WaitGroup) *Worker {
-	return &Worker{taskChannel: taskChannle, isCore: isCore, quit: quit, keepAliveTime: keepAliveTime, wg: wg}
+func NewWorker(taskChannle chan Work, isCore bool, keepAliveTime time.Duration, wg *sync.WaitGroup) *Worker {
+	return &Worker{taskChannel: taskChannle, isCore: isCore, keepAliveTime: keepAliveTime, wg: wg}
 }
 
 
-func (w *Worker) Work() {
+func (w *Worker) Work(ctx context.Context) {
 	defer w.wg.Done()
 	timer := time.NewTimer(w.keepAliveTime)
 	for {
@@ -50,7 +50,7 @@ func (w *Worker) Work() {
 			if !w.isCore {
 				return
 			}
-		case <- w.quit: 
+		case <- ctx.Done(): 
 			return
 		case task := <- w.taskChannel:
 			res := task.work(task.args)
@@ -68,7 +68,8 @@ type ThreadPool struct {
 	maxThreads int
 	keepAliveTime time.Duration
 	taskChannel chan Work
-	quit chan struct{}
+	ctx context.Context
+	cancel context.CancelFunc
 	threshold int
 	discount int
 	wg *sync.WaitGroup
@@ -76,16 +77,16 @@ type ThreadPool struct {
 
 func NewThreadPool(coreThreads, maxThreads int, keepAliveTime time.Duration, threshold, discount int) *ThreadPool {
 	taskChannel := make(chan Work, maxThreads * 2 + 1)
-	quit := make(chan struct{}, maxThreads)
 	workers := make([]*Worker, 0)
 	var wg sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
 	for i := 0; i < coreThreads; i++ {
-		worker := NewWorker(taskChannel, true, quit, keepAliveTime, &wg)
-		go worker.Work()
+		worker := NewWorker(taskChannel, true, keepAliveTime, &wg)
+		go worker.Work(ctx)
 		workers = append(workers, worker)
 		wg.Add(1)
 	}
-	t := &ThreadPool{workers: workers, coreThreads: coreThreads, maxThreads: maxThreads, keepAliveTime: keepAliveTime, taskChannel: taskChannel, quit: quit, threshold: threshold, discount: discount, wg: &wg}
+	t := &ThreadPool{workers: workers, coreThreads: coreThreads, maxThreads: maxThreads, keepAliveTime: keepAliveTime, taskChannel: taskChannel, ctx: ctx, cancel: cancel, threshold: threshold, discount: discount, wg: &wg}
 	go t.daemon()
 	return t
 }
@@ -105,8 +106,8 @@ func (t *ThreadPool) daemon() {
 		// 准备在起的协程数
 		threadNum := min(t.maxThreads - len(t.workers), len(t.taskChannel) / t.discount)
 		for i := 0; i < threadNum; i++ {
-			worker := NewWorker(t.taskChannel, false, t.quit, t.keepAliveTime, t.wg)
-			go worker.Work()
+			worker := NewWorker(t.taskChannel, false, t.keepAliveTime, t.wg)
+			go worker.Work(t.ctx)
 			t.workers = append(t.workers, worker)
 			t.wg.Add(1)
 		}
@@ -115,10 +116,7 @@ func (t *ThreadPool) daemon() {
 
 // Close 优雅关闭协程池
 func (t *ThreadPool) Close() {
-	for i := 0; i < t.maxThreads; i++ {
-		t.quit <- struct{}{}
-	}
+	t.cancel()
 	t.wg.Wait()
-	close(t.quit)
 	close(t.taskChannel)
 }
