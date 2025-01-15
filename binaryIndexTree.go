@@ -16,7 +16,7 @@ func NewBinaryIndexTree(nums []int) *BinaryIndexTree {
 }
 
 
-// 求取前i个数的和
+// Sum求取前i个数的和
 func (tree *BinaryIndexTree) Sum(i int) int {
 	sum := 0
 	for i > 0 {
@@ -27,7 +27,7 @@ func (tree *BinaryIndexTree) Sum(i int) int {
 }
 
 
-// 第i个数加上delta
+// Add第i个数加上delta
 func (tree *BinaryIndexTree) Add(i, delta int) {
 	for i < len(tree.elems) {
 		tree.elems[i] += delta
